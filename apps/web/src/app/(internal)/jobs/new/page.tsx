@@ -1,22 +1,121 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 const PLATFORMS = ["tiktok", "instagram", "facebook", "youtube"] as const;
 
 export default function NewJobPage() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const [hasSuggested, setHasSuggested] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([
     ...PLATFORMS,
   ]);
+  const [highlightedFields, setHighlightedFields] = useState<Set<string>>(
+    new Set()
+  );
+
+  const formRef = useRef<HTMLFormElement>(null);
 
   function togglePlatform(p: string) {
     setSelectedPlatforms((prev) =>
       prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
     );
+  }
+
+  async function handleSuggest() {
+    if (!formRef.current) return;
+    const form = new FormData(formRef.current);
+    const companyName = (form.get("company_name") as string)?.trim();
+    const productName = (form.get("product_name") as string)?.trim();
+    const productCategory = (form.get("product_category") as string)?.trim();
+
+    if (!companyName || !productName || !productCategory) {
+      setError(
+        "Please fill in Company Name, Product Name, and Product Category before suggesting."
+      );
+      return;
+    }
+
+    setSuggesting(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/suggest-targeting", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyName, productName, productCategory }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || "Failed to get suggestions");
+        return;
+      }
+
+      const suggestions = await res.json();
+      const f = formRef.current;
+
+      const filled: string[] = [];
+
+      if (suggestions.targetIcp) {
+        const el = f.elements.namedItem("target_icp") as HTMLInputElement;
+        if (el) {
+          el.value = suggestions.targetIcp;
+          filled.push("target_icp");
+        }
+      }
+      if (suggestions.targetCountry) {
+        const el = f.elements.namedItem("target_country") as HTMLInputElement;
+        if (el) {
+          el.value = suggestions.targetCountry;
+          filled.push("target_country");
+        }
+      }
+      if (suggestions.competitorCompanies) {
+        const el = f.elements.namedItem(
+          "competitor_accounts"
+        ) as HTMLInputElement;
+        if (el) {
+          el.value = suggestions.competitorCompanies;
+          filled.push("competitor_accounts");
+        }
+      }
+      if (suggestions.analysisPeriodDays) {
+        const days = Number(suggestions.analysisPeriodDays);
+        if (days > 0) {
+          const endDate = new Date();
+          const startDate = new Date(Date.now() - days * 86400000);
+          const startEl = f.elements.namedItem(
+            "analysis_period_start"
+          ) as HTMLInputElement;
+          const endEl = f.elements.namedItem(
+            "analysis_period_end"
+          ) as HTMLInputElement;
+          if (startEl) {
+            startEl.value = startDate.toISOString().split("T")[0];
+            filled.push("analysis_period_start");
+          }
+          if (endEl) {
+            endEl.value = endDate.toISOString().split("T")[0];
+            filled.push("analysis_period_end");
+          }
+        }
+      }
+
+      setHighlightedFields(new Set(filled));
+      setHasSuggested(true);
+
+      // Remove highlight after animation
+      setTimeout(() => setHighlightedFields(new Set()), 2000);
+    } catch {
+      setError("Failed to connect to suggestion service");
+    } finally {
+      setSuggesting(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -66,6 +165,13 @@ export default function NewJobPage() {
     .toISOString()
     .split("T")[0];
 
+  const inputClass = (fieldName: string) =>
+    `mt-1 block w-full rounded-md border px-3 py-2 text-sm outline-none transition-all duration-500 ${
+      highlightedFields.has(fieldName)
+        ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
+        : "border-gray-300 focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
+    }`;
+
   return (
     <div className="p-8 max-w-2xl">
       <h1 className="text-2xl font-bold mb-6">Create Analysis Job</h1>
@@ -76,7 +182,7 @@ export default function NewJobPage() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-5">
         {/* Company & Product */}
         <fieldset className="space-y-4">
           <legend className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">
@@ -90,7 +196,7 @@ export default function NewJobPage() {
               <input
                 name="company_name"
                 required
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
+                className={inputClass("company_name")}
                 placeholder="Acme Corp"
               />
             </label>
@@ -101,7 +207,7 @@ export default function NewJobPage() {
               <input
                 name="product_name"
                 required
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
+                className={inputClass("product_name")}
                 placeholder="Widget Pro"
               />
             </label>
@@ -113,10 +219,45 @@ export default function NewJobPage() {
             <input
               name="product_category"
               required
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
+              className={inputClass("product_category")}
               placeholder="e.g. SaaS, Beauty, Fitness"
             />
           </label>
+
+          {/* Suggest Targeting Button */}
+          <button
+            type="button"
+            onClick={handleSuggest}
+            disabled={suggesting}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {suggesting ? (
+              <>
+                <svg
+                  className="animate-spin h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                  />
+                </svg>
+                Suggesting...
+              </>
+            ) : (
+              <>{hasSuggested ? "\u2728 Re-suggest Targeting" : "\u2728 Suggest Targeting"}</>
+            )}
+          </button>
         </fieldset>
 
         {/* Targeting */}
@@ -132,7 +273,7 @@ export default function NewJobPage() {
               <input
                 name="target_icp"
                 required
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
+                className={inputClass("target_icp")}
                 placeholder="e.g. Gen Z women 18-25"
               />
             </label>
@@ -143,7 +284,7 @@ export default function NewJobPage() {
               <input
                 name="target_country"
                 required
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
+                className={inputClass("target_country")}
                 placeholder="e.g. US, KR, JP"
               />
             </label>
@@ -154,7 +295,7 @@ export default function NewJobPage() {
             </span>
             <input
               name="competitor_accounts"
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
+              className={inputClass("competitor_accounts")}
               placeholder="@competitor1, @competitor2 (comma-separated)"
               defaultValue=""
             />
@@ -176,7 +317,7 @@ export default function NewJobPage() {
                 type="date"
                 required
                 defaultValue={weekAgo}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
+                className={inputClass("analysis_period_start")}
               />
             </label>
             <label className="block">
@@ -188,7 +329,7 @@ export default function NewJobPage() {
                 type="date"
                 required
                 defaultValue={today}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
+                className={inputClass("analysis_period_end")}
               />
             </label>
           </div>

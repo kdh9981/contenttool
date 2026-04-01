@@ -160,7 +160,7 @@ async def _generate_briefs(
 
         # Generate AI brief (best-effort)
         brief_text = await generate_brief(
-            config.anthropic, job, platform, records
+            config.gemini, job, platform, records
         )
 
         # Store trend_analysis row

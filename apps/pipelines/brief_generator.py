@@ -1,4 +1,4 @@
-"""Content brief generator — uses Claude API to produce structured briefs from trend data."""
+"""Content brief generator — uses Google Gemini API to produce structured briefs from trend data."""
 
 from __future__ import annotations
 
@@ -6,9 +6,10 @@ import json
 import logging
 from collections import Counter
 
-import anthropic
+from google import genai
+from google.genai import types
 
-from .config import AnthropicConfig
+from .config import GeminiConfig
 from .models import Job, VideoRecord
 
 logger = logging.getLogger(__name__)
@@ -198,17 +199,17 @@ def prepare_platform_summary(
 
 
 async def generate_brief(
-    config: AnthropicConfig,
+    config: GeminiConfig,
     job: Job,
     platform: str,
     records: list[VideoRecord],
 ) -> str | None:
-    """Call Claude API to generate a content brief for one platform's data.
+    """Call Gemini API to generate a content brief for one platform's data.
 
     Returns the brief text, or None if generation fails.
     """
     if not config.api_key:
-        logger.warning("ANTHROPIC_API_KEY not set — skipping brief generation")
+        logger.warning("GOOGLE_API_KEY not set — skipping brief generation")
         return None
 
     if not records:
@@ -221,24 +222,27 @@ async def generate_brief(
     template_vars = {k: v for k, v in summary.items() if k != "ranked_records"}
     user_prompt = BRIEF_TEMPLATE.format(**template_vars)
 
-    client = anthropic.AsyncAnthropic(api_key=config.api_key)
+    client = genai.Client(api_key=config.api_key)
 
     try:
-        message = await client.messages.create(
+        response = await client.aio.models.generate_content(
             model=config.model,
-            max_tokens=config.max_tokens,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}],
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                max_output_tokens=config.max_output_tokens,
+            ),
         )
-        brief_text = message.content[0].text
+        brief_text = response.text
+        usage = response.usage_metadata
         logger.info(
             "Generated content brief for %s (%d chars, %d input + %d output tokens)",
             platform,
             len(brief_text),
-            message.usage.input_tokens,
-            message.usage.output_tokens,
+            usage.prompt_token_count or 0,
+            usage.candidates_token_count or 0,
         )
         return brief_text
-    except anthropic.APIError as e:
-        logger.error("Claude API error for %s brief: %s", platform, e)
+    except Exception as e:
+        logger.error("Gemini API error for %s brief: %s", platform, e)
         return None

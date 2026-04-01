@@ -63,12 +63,12 @@ class MetaConfig:
 
 
 @dataclass(frozen=True)
-class AnthropicConfig:
+class GeminiConfig:
     api_key: str = field(
-        default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY", "")
+        default_factory=lambda: os.environ.get("GOOGLE_API_KEY", "")
     )
-    model: str = "claude-sonnet-4-6"
-    max_tokens: int = 4096
+    model: str = "gemini-2.5-flash"
+    max_output_tokens: int = 4096
 
 
 @dataclass(frozen=True)
@@ -77,7 +77,7 @@ class PipelineConfig:
     youtube: YouTubeConfig = field(default_factory=YouTubeConfig)
     tiktok: TikTokConfig = field(default_factory=TikTokConfig)
     meta: MetaConfig = field(default_factory=MetaConfig)
-    anthropic: AnthropicConfig = field(default_factory=AnthropicConfig)
+    gemini: GeminiConfig = field(default_factory=GeminiConfig)
     openai_api_key: str = field(
         default_factory=lambda: os.environ.get("OPENAI_API_KEY", "")
     )

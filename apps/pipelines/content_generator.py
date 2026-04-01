@@ -8,15 +8,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import anthropic
+from google import genai
+from google.genai import types
 
-from .config import PipelineConfig, AnthropicConfig
+from .config import PipelineConfig, GeminiConfig
 from .models import Job
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Copy generation (Claude API)
+# Copy generation (Gemini API)
 # ---------------------------------------------------------------------------
 
 COPY_SYSTEM_PROMPT = (
@@ -64,14 +65,14 @@ Produce the following assets in JSON format (respond with ONLY the JSON, no mark
 
 
 async def generate_copy(
-    anthropic_config: AnthropicConfig,
+    gemini_config: GeminiConfig,
     job: Job,
     platform: str,
     content_brief: str,
 ) -> dict | None:
     """Generate social copy, ad copy, and video scripts from a content brief."""
-    if not anthropic_config.api_key:
-        logger.warning("ANTHROPIC_API_KEY not set — skipping copy generation")
+    if not gemini_config.api_key:
+        logger.warning("GOOGLE_API_KEY not set — skipping copy generation")
         return None
 
     if not content_brief:
@@ -88,18 +89,20 @@ async def generate_copy(
         content_brief=content_brief,
     )
 
-    client = anthropic.AsyncAnthropic(api_key=anthropic_config.api_key)
+    client = genai.Client(api_key=gemini_config.api_key)
 
     try:
-        message = await client.messages.create(
-            model=anthropic_config.model,
-            max_tokens=2048,
-            system=COPY_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
+        response = await client.aio.models.generate_content(
+            model=gemini_config.model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=COPY_SYSTEM_PROMPT,
+                max_output_tokens=2048,
+            ),
         )
-        text = message.content[0].text
+        text = response.text
 
-        # Parse JSON response — Claude may wrap in backticks
+        # Parse JSON response — LLM may wrap in backticks
         import json
         cleaned = text.strip()
         if cleaned.startswith("```"):
@@ -107,15 +110,16 @@ async def generate_copy(
             cleaned = cleaned.rsplit("```", 1)[0]
 
         copy_data = json.loads(cleaned)
+        usage = response.usage_metadata
         logger.info(
             "Generated copy for %s (%d input + %d output tokens)",
             platform,
-            message.usage.input_tokens,
-            message.usage.output_tokens,
+            usage.prompt_token_count or 0,
+            usage.candidates_token_count or 0,
         )
         return copy_data
 
-    except (anthropic.APIError, json.JSONDecodeError) as e:
+    except (json.JSONDecodeError, Exception) as e:
         logger.error("Copy generation failed for %s: %s", platform, e)
         return None
 
@@ -226,7 +230,7 @@ async def generate_content_package(
     # Generate all assets concurrently
     import asyncio
 
-    copy_task = generate_copy(config.anthropic, job, platform, content_brief)
+    copy_task = generate_copy(config.gemini, job, platform, content_brief)
     image_task = generate_images(config, job, platform, content_brief)
     video_task = generate_video(config, job, platform, content_brief)
 

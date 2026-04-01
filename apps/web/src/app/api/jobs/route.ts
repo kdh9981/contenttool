@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
   const invalidPlatforms = platforms.filter((p: string) => !validPlatforms.has(p));
   if (invalidPlatforms.length > 0) {
     return NextResponse.json(
-      { error: `Invalid platform(s): ${invalidPlatforms.join(", ")}. Valid: ${[...validPlatforms].join(", ")}` },
+      { error: `Invalid platform(s): ${invalidPlatforms.join(", ")}. Valid: ${Array.from(validPlatforms).join(", ")}` },
       { status: 400 }
     );
   }

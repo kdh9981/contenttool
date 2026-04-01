@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -20,35 +21,42 @@ def get_client(config: SupabaseConfig) -> Client:
 async def update_job_status(
     client: Client, job_id: str, status: str
 ) -> None:
-    client.table("jobs").update({"status": status}).eq("job_id", job_id).execute()
-    logger.info("Job %s status → %s", job_id, status)
+    await asyncio.to_thread(
+        lambda: client.table("jobs").update({"status": status}).eq("job_id", job_id).execute()
+    )
+    logger.info("Job %s status -> %s", job_id, status)
 
 
 async def insert_video_records(
     client: Client, records: list[VideoRecord]
-) -> int:
+) -> list[dict[str, Any]]:
+    """Insert video records and return the inserted rows (with record_id UUIDs)."""
     if not records:
-        return 0
+        return []
 
     rows: list[dict[str, Any]] = []
     for r in records:
         row = r.model_dump(mode="json")
-        # published_at → ISO string for Supabase
+        # published_at -> ISO string for Supabase
         if row.get("published_at"):
             row["published_at"] = r.published_at.isoformat() if r.published_at else None
         rows.append(row)
 
-    result = client.table("video_records").insert(rows).execute()
-    count = len(result.data) if result.data else 0
-    logger.info("Inserted %d video records", count)
-    return count
+    result = await asyncio.to_thread(
+        lambda: client.table("video_records").insert(rows).execute()
+    )
+    inserted = result.data or []
+    logger.info("Inserted %d video records", len(inserted))
+    return inserted
 
 
 async def insert_trend_analysis(
     client: Client, row: dict[str, Any]
 ) -> str | None:
     """Insert a trend_analysis row and return the analysis_id."""
-    result = client.table("trend_analysis").insert(row).execute()
+    result = await asyncio.to_thread(
+        lambda: client.table("trend_analysis").insert(row).execute()
+    )
     if result.data:
         analysis_id = result.data[0].get("analysis_id")
         logger.info("Inserted trend_analysis %s for job %s / %s",
@@ -58,11 +66,13 @@ async def insert_trend_analysis(
 
 
 async def fetch_queued_jobs(client: Client) -> list[dict[str, Any]]:
-    result = (
-        client.table("jobs")
-        .select("*")
-        .eq("status", "queued")
-        .order("created_at", desc=False)
-        .execute()
+    result = await asyncio.to_thread(
+        lambda: (
+            client.table("jobs")
+            .select("*")
+            .eq("status", "queued")
+            .order("created_at", desc=False)
+            .execute()
+        )
     )
     return result.data or []

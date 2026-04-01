@@ -23,6 +23,36 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Validate date formats (YYYY-MM-DD)
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  for (const field of ["analysis_period_start", "analysis_period_end"] as const) {
+    if (!dateRegex.test(body[field]) || isNaN(Date.parse(body[field]))) {
+      return NextResponse.json(
+        { error: `Invalid date format for ${field}. Expected YYYY-MM-DD.` },
+        { status: 400 }
+      );
+    }
+  }
+
+  // Validate date range
+  if (body.analysis_period_end < body.analysis_period_start) {
+    return NextResponse.json(
+      { error: "analysis_period_end must be >= analysis_period_start" },
+      { status: 400 }
+    );
+  }
+
+  // Validate platform values
+  const validPlatforms = new Set(["tiktok", "instagram", "facebook", "youtube"]);
+  const platforms: string[] = body.platforms ?? ["tiktok", "instagram", "facebook", "youtube"];
+  const invalidPlatforms = platforms.filter((p: string) => !validPlatforms.has(p));
+  if (invalidPlatforms.length > 0) {
+    return NextResponse.json(
+      { error: `Invalid platform(s): ${invalidPlatforms.join(", ")}. Valid: ${[...validPlatforms].join(", ")}` },
+      { status: 400 }
+    );
+  }
+
   const supabase = createAdminClient();
 
   const { data, error } = await supabase

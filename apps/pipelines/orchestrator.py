@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Callable, Awaitable
+from typing import Callable, Awaitable, Union
 
 from collections import Counter
 
@@ -16,8 +16,11 @@ from . import youtube, tiktok, meta
 
 logger = logging.getLogger(__name__)
 
+# Type alias: extractors return either a single result or a list (meta returns list)
+ExtractResult = Union[PipelineResult, list[PipelineResult]]
+
 # Maps platform name → extract function
-EXTRACTORS: dict[str, Callable[[Job, PipelineConfig], Awaitable[PipelineResult]]] = {
+EXTRACTORS: dict[str, Callable[[Job, PipelineConfig], Awaitable[ExtractResult]]] = {
     "youtube": youtube.extract,
     "tiktok": tiktok.extract,
     "instagram": meta.extract,
@@ -53,21 +56,34 @@ async def run_job(job: Job, config: PipelineConfig) -> list[PipelineResult]:
     for platform, task in tasks:
         try:
             result = await task
-            results.append(result)
+            # meta.extract returns a list; others return a single result
+            if isinstance(result, list):
+                results.extend(result)
+            else:
+                results.append(result)
         except Exception as e:
             logger.exception("Unhandled error in %s extractor", platform)
             results.append(
                 PipelineResult(platform=platform, success=False, error=str(e))
             )
 
-    # Persist all successful records
+    # Persist all successful records and capture the inserted rows (with record_id UUIDs)
     all_records = []
     for r in results:
         if r.success and r.records:
             all_records.extend(r.records)
 
+    inserted_rows: list[dict] = []
     if all_records:
-        await insert_video_records(db, all_records)
+        inserted_rows = await insert_video_records(db, all_records)
+
+    # Build video_id → record_id mapping for top_videos references
+    video_id_to_record_id: dict[str, str] = {}
+    for row in inserted_rows:
+        vid = row.get("video_id", "")
+        rid = row.get("record_id", "")
+        if vid and rid:
+            video_id_to_record_id[vid] = rid
 
     # Determine final job status
     all_failed = all(not r.success for r in results)
@@ -90,13 +106,17 @@ async def run_job(job: Job, config: PipelineConfig) -> list[PipelineResult]:
 
     # --- Phase: Generate content briefs per platform ---
     if not all_failed:
-        await _generate_briefs(db, job, results, config)
+        await _generate_briefs(db, job, results, config, video_id_to_record_id)
 
     return results
 
 
 async def _generate_briefs(
-    db, job: Job, results: list[PipelineResult], config: PipelineConfig
+    db,
+    job: Job,
+    results: list[PipelineResult],
+    config: PipelineConfig,
+    video_id_to_record_id: dict[str, str],
 ) -> None:
     """Score videos, generate AI briefs, and store trend_analysis rows."""
     for result in results:
@@ -112,7 +132,11 @@ async def _generate_briefs(
             key=lambda x: x[1],
             reverse=True,
         )
-        top_record_ids = [r.video_id for r, _ in scored[:20]]
+        # Use record_id UUIDs (from DB insert) for top_videos, falling back to video_id
+        top_record_ids = [
+            video_id_to_record_id.get(r.video_id, r.video_id)
+            for r, _ in scored[:20]
+        ]
 
         # Aggregate stats
         avg_likes = sum(r.like_count for r in records) / len(records)

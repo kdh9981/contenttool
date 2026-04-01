@@ -163,8 +163,12 @@ def _parse_instagram_record(job_id: str, post: dict) -> VideoRecord:
     )
 
 
-async def extract(job: Job, config: PipelineConfig) -> PipelineResult:
-    """Run Meta extraction — Ad Library for ads, Apify for organic IG content."""
+async def extract(job: Job, config: PipelineConfig) -> list[PipelineResult]:
+    """Run Meta extraction — Ad Library for ads, Apify for organic IG content.
+
+    Returns a list of PipelineResults, one per platform (instagram, facebook),
+    so downstream code generates separate trend analyses for each.
+    """
     all_records: list[VideoRecord] = []
     errors: list[str] = []
     query = f"{job.product_category} {job.product_name}"
@@ -217,19 +221,32 @@ async def extract(job: Job, config: PipelineConfig) -> PipelineResult:
                 errors.append("APIFY_TOKEN not configured — skipping organic IG")
 
             if not all_records and errors:
-                return PipelineResult(
-                    platform="instagram",
+                return [PipelineResult(
+                    platform="meta",
                     success=False,
                     error="; ".join(errors),
-                )
+                )]
 
-            return PipelineResult(
-                platform="instagram",
-                success=True,
-                records=all_records,
-                records_count=len(all_records),
-                error="; ".join(errors) if errors else None,
-            )
+            # Split records by platform so each gets its own trend analysis
+            by_platform: dict[str, list[VideoRecord]] = {}
+            for r in all_records:
+                by_platform.setdefault(r.platform, []).append(r)
+
+            results: list[PipelineResult] = []
+            for platform, records in by_platform.items():
+                results.append(PipelineResult(
+                    platform=platform,
+                    success=True,
+                    records=records,
+                    records_count=len(records),
+                    error="; ".join(errors) if errors else None,
+                ))
+
+            return results if results else [PipelineResult(
+                platform="meta",
+                success=False,
+                error="; ".join(errors) if errors else "No records extracted",
+            )]
     except Exception as e:
         logger.exception("Meta extraction failed for job %s", job.job_id)
-        return PipelineResult(platform="instagram", success=False, error=str(e))
+        return [PipelineResult(platform="meta", success=False, error=str(e))]

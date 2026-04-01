@@ -11,9 +11,13 @@ load_dotenv()
 
 @dataclass(frozen=True)
 class SupabaseConfig:
-    url: str = field(default_factory=lambda: os.environ["SUPABASE_URL"])
+    url: str = field(
+        default_factory=lambda: os.environ.get(
+            "SUPABASE_URL", os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "")
+        )
+    )
     service_role_key: str = field(
-        default_factory=lambda: os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+        default_factory=lambda: os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
     )
 
 

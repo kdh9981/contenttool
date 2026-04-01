@@ -46,12 +46,20 @@ export default function DashboardPage() {
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Analysis Jobs</h1>
-        <Link
-          href="/jobs/new"
-          className="bg-gray-900 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition-colors"
-        >
-          + New Job
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href="/review"
+            className="border border-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            Review Queue
+          </Link>
+          <Link
+            href="/jobs/new"
+            className="bg-gray-900 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition-colors"
+          >
+            + New Job
+          </Link>
+        </div>
       </div>
 
       {/* Status filter tabs */}

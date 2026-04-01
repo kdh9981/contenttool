@@ -25,6 +25,12 @@ supabase/.temp/
 .DS_Store
 *.pem
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
 # Build
 dist/
 build/

@@ -237,20 +237,163 @@ export default function ReviewPage({
 }
 
 function ContentPreview({ body }: { body: Record<string, unknown> }) {
-  // Render content_body fields in a readable way
-  const entries = Object.entries(body);
-  if (entries.length === 0) return <span className="text-gray-400">No content preview available</span>;
+  if (!body || Object.keys(body).length === 0) {
+    return <span className="text-gray-400">No content preview available</span>;
+  }
+
+  const copy = body.copy as {
+    social_captions?: string[];
+    ad_copy?: Array<{ headline?: string; body?: string } | string>;
+    video_scripts?: Array<{
+      hook?: string;
+      body?: string;
+      cta?: string;
+      duration_seconds?: number;
+    }>;
+  } | null;
+
+  const imageUrls = (body.image_urls as string[]) ?? [];
+  const briefText = body.brief_text as string | undefined;
 
   return (
-    <div className="space-y-3">
-      {entries.map(([key, value]) => (
-        <div key={key}>
-          <span className="text-xs font-medium text-gray-500 uppercase">{key.replace(/_/g, " ")}</span>
-          <div className="mt-0.5 whitespace-pre-wrap">
-            {typeof value === "string" ? value : JSON.stringify(value, null, 2)}
+    <div className="space-y-6">
+      {/* Images */}
+      {imageUrls.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+            Generated Images
+          </h4>
+          <div className="grid grid-cols-2 gap-3">
+            {imageUrls.map((url, i) => (
+              <div key={i} className="rounded-lg overflow-hidden border border-gray-200">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={url}
+                  alt={`Generated asset ${i + 1}`}
+                  className="w-full h-auto object-cover"
+                />
+              </div>
+            ))}
           </div>
         </div>
-      ))}
+      )}
+
+      {/* Social Captions */}
+      {copy?.social_captions && copy.social_captions.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+            Social Captions
+          </h4>
+          <div className="space-y-2">
+            {copy.social_captions.map((caption, i) => (
+              <div
+                key={i}
+                className="bg-white border border-gray-200 rounded-md p-3 text-sm"
+              >
+                <span className="text-xs text-gray-400 font-medium">
+                  Variant {i + 1}
+                </span>
+                <p className="mt-1 whitespace-pre-wrap">{caption}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Ad Copy */}
+      {copy?.ad_copy && copy.ad_copy.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+            Ad Copy
+          </h4>
+          <div className="space-y-2">
+            {copy.ad_copy.map((ad, i) => (
+              <div
+                key={i}
+                className="bg-white border border-gray-200 rounded-md p-3 text-sm"
+              >
+                <span className="text-xs text-gray-400 font-medium">
+                  Ad {i + 1}
+                </span>
+                {typeof ad === "string" ? (
+                  <p className="mt-1 whitespace-pre-wrap">{ad}</p>
+                ) : (
+                  <>
+                    {ad.headline && (
+                      <p className="mt-1 font-semibold text-gray-900">
+                        {ad.headline}
+                      </p>
+                    )}
+                    {ad.body && (
+                      <p className="mt-1 text-gray-700 whitespace-pre-wrap">
+                        {ad.body}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Video Scripts */}
+      {copy?.video_scripts && copy.video_scripts.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+            Video Scripts
+          </h4>
+          {copy.video_scripts.map((script, i) => (
+            <div
+              key={i}
+              className="bg-white border border-gray-200 rounded-md p-3 text-sm space-y-2"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-400 font-medium">
+                  Script {i + 1}
+                </span>
+                {script.duration_seconds && (
+                  <span className="text-xs text-gray-400">
+                    ~{script.duration_seconds}s
+                  </span>
+                )}
+              </div>
+              {script.hook && (
+                <div>
+                  <span className="text-xs font-medium text-blue-600">
+                    Hook (0-3s)
+                  </span>
+                  <p className="text-gray-800">{script.hook}</p>
+                </div>
+              )}
+              {script.body && (
+                <div>
+                  <span className="text-xs font-medium text-gray-500">Body</span>
+                  <p className="text-gray-700">{script.body}</p>
+                </div>
+              )}
+              {script.cta && (
+                <div>
+                  <span className="text-xs font-medium text-green-600">CTA</span>
+                  <p className="text-gray-800 font-medium">{script.cta}</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Brief text (collapsed by default) */}
+      {briefText && (
+        <details className="group">
+          <summary className="text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700">
+            Content Brief
+          </summary>
+          <div className="mt-2 bg-white border border-gray-200 rounded-md p-3 text-sm text-gray-700 whitespace-pre-wrap max-h-64 overflow-y-auto">
+            {briefText}
+          </div>
+        </details>
+      )}
     </div>
   );
 }

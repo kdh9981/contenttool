@@ -9,7 +9,7 @@ export async function GET(
   const { id } = await params;
   const supabase = createAdminClient();
 
-  const [jobResult, recordsResult, analysisResult] = await Promise.all([
+  const [jobResult, recordsResult, analysisResult, packagesResult] = await Promise.all([
     supabase.from("jobs").select("*").eq("job_id", id).single(),
     supabase
       .from("video_records")
@@ -17,6 +17,11 @@ export async function GET(
       .eq("job_id", id)
       .order("view_count", { ascending: false }),
     supabase.from("trend_analysis").select("*").eq("job_id", id),
+    supabase
+      .from("content_packages")
+      .select("*")
+      .eq("job_id", id)
+      .order("created_at", { ascending: false }),
   ]);
 
   if (jobResult.error) {
@@ -30,6 +35,7 @@ export async function GET(
     job: jobResult.data,
     video_records: recordsResult.data ?? [],
     trend_analysis: analysisResult.data ?? [],
+    content_packages: packagesResult.data ?? [],
   });
 }
 

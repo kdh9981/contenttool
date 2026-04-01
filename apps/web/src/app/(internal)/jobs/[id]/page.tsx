@@ -46,10 +46,24 @@ type Job = {
   created_at: string;
 };
 
+type ContentPackage = {
+  id: string;
+  title: string;
+  status: string;
+  content_type: string;
+  content_body: Record<string, unknown>;
+  platform: string | null;
+  target_audience: string | null;
+  assigned_reviewer: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type JobDetail = {
   job: Job;
   video_records: VideoRecord[];
   trend_analysis: TrendAnalysis[];
+  content_packages: ContentPackage[];
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -75,6 +89,11 @@ export default function JobDetailPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activePlatform, setActivePlatform] = useState<string | null>(null);
+  const [showSendDialog, setShowSendDialog] = useState(false);
+  const [clientName, setClientName] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+  const [reviewUrl, setReviewUrl] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
 
   const fetchJob = useCallback(async () => {
     const res = await fetch(`/api/jobs/${id}`);
@@ -112,7 +131,25 @@ export default function JobDetailPage({
     );
   }
 
-  const { job, video_records, trend_analysis } = data;
+  async function handleSendToClient() {
+    setSending(true);
+    const res = await fetch("/api/client-tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        job_id: id,
+        client_name: clientName,
+        client_email: clientEmail || null,
+      }),
+    });
+    if (res.ok) {
+      const result = await res.json();
+      setReviewUrl(window.location.origin + result.review_url);
+    }
+    setSending(false);
+  }
+
+  const { job, video_records, trend_analysis, content_packages } = data;
   const activeAnalysis = trend_analysis.find(
     (a) => a.platform === activePlatform
   );
@@ -279,6 +316,135 @@ export default function JobDetailPage({
             </div>
           )}
         </>
+      )}
+
+      {/* Content Packages */}
+      {content_packages.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+              Content Packages ({content_packages.length})
+            </h2>
+            <button
+              onClick={() => setShowSendDialog(true)}
+              className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
+            >
+              Send to Client
+            </button>
+          </div>
+          <div className="space-y-3">
+            {content_packages.map((pkg) => (
+              <div key={pkg.id} className="bg-white rounded-lg border border-gray-200 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-medium text-gray-900">{pkg.title}</h3>
+                    <div className="flex gap-2 mt-1">
+                      {pkg.platform && (
+                        <span className="px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-600 capitalize">
+                          {pkg.platform}
+                        </span>
+                      )}
+                      <span className="px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-600">
+                        {pkg.content_type}
+                      </span>
+                    </div>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
+                    pkg.status === "final" ? "bg-green-100 text-green-800" :
+                    pkg.status === "client_review" ? "bg-amber-100 text-amber-800" :
+                    pkg.status === "revision_requested" ? "bg-orange-100 text-orange-800" :
+                    pkg.status === "approved" ? "bg-green-100 text-green-800" :
+                    pkg.status === "rejected" ? "bg-red-100 text-red-800" :
+                    "bg-gray-100 text-gray-800"
+                  }`}>
+                    {pkg.status.replace(/_/g, " ")}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Send to Client Dialog */}
+      {showSendDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
+            {reviewUrl ? (
+              <>
+                <h3 className="text-lg font-semibold mb-2">Review Link Created</h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  Share this link with the client:
+                </p>
+                <div className="bg-gray-50 rounded-md p-3 text-sm font-mono break-all mb-4">
+                  {reviewUrl}
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(reviewUrl);
+                  }}
+                  className="w-full px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-md hover:bg-gray-700 mb-2"
+                >
+                  Copy Link
+                </button>
+                <button
+                  onClick={() => {
+                    setShowSendDialog(false);
+                    setReviewUrl(null);
+                    setClientName("");
+                    setClientEmail("");
+                  }}
+                  className="w-full px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50"
+                >
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold mb-4">Send to Client</h3>
+                <div className="space-y-3 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Client Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={clientName}
+                      onChange={(e) => setClientName(e.target.value)}
+                      placeholder="e.g. Sarah Johnson"
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Client Email
+                    </label>
+                    <input
+                      type="email"
+                      value={clientEmail}
+                      onChange={(e) => setClientEmail(e.target.value)}
+                      placeholder="sarah@company.com (optional)"
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={handleSendToClient}
+                  disabled={!clientName.trim() || sending}
+                  className="w-full px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 mb-2"
+                >
+                  {sending ? "Generating..." : "Generate Review Link"}
+                </button>
+                <button
+                  onClick={() => setShowSendDialog(false)}
+                  className="w-full px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Video Records Table */}

@@ -6,11 +6,12 @@ import asyncio
 import logging
 from typing import Callable, Awaitable, Union
 
+import re
 from collections import Counter
 
 from .config import PipelineConfig
 from .db import get_client, update_job_status, insert_video_records, insert_trend_analysis
-from .models import Job, PipelineResult
+from .models import Job, PipelineResult, VideoRecord
 from .brief_generator import generate_brief, _engagement_score
 from . import youtube, tiktok, meta
 
@@ -150,6 +151,12 @@ async def _generate_briefs(
                 hashtag_counter[tag.lower().strip("#")] += 1
         top_hashtags = [tag for tag, _ in hashtag_counter.most_common(20)]
 
+        # Content theme extraction from captions and hashtags
+        top_content_themes = _extract_themes(records)
+
+        # Competitor benchmarking
+        competitor_benchmark = _benchmark_competitors(job, records)
+
         # Generate AI brief (best-effort)
         brief_text = await generate_brief(
             config.anthropic, job, platform, records
@@ -163,10 +170,125 @@ async def _generate_briefs(
             "period_end": job.analysis_period_end,
             "top_videos": top_record_ids,
             "top_hashtags": top_hashtags,
-            "top_content_themes": [],  # populated by future theme extraction
+            "top_content_themes": top_content_themes,
             "avg_like_count": avg_likes,
             "avg_view_count": avg_views,
             "avg_comment_count": avg_comments,
             "content_brief": brief_text,
+            "competitor_benchmark": competitor_benchmark,
         }
         await insert_trend_analysis(db, row)
+
+
+# ---------------------------------------------------------------------------
+# Theme extraction — clusters captions and hashtags into content themes
+# ---------------------------------------------------------------------------
+
+# Common words to ignore when extracting themes
+_STOP_WORDS = frozenset(
+    "the a an and or but in on at to for of is it this that with from by as be "
+    "are was were has have had do does did will would can could may might shall "
+    "should not no so if then than too very just about up out all more also how "
+    "its my your our their he she they we you i me us him her them what which "
+    "who when where why am been being each few some such only own same into over "
+    "after before between through during above below again further once here there".split()
+)
+
+
+def _extract_themes(records: list[VideoRecord], max_themes: int = 10) -> list[str]:
+    """Extract content themes from video captions and hashtags.
+
+    Groups related terms by frequency to identify the dominant content themes
+    across a set of videos. Returns the top themes as short descriptive labels.
+    """
+    word_counter: Counter[str] = Counter()
+
+    for r in records:
+        # Extract meaningful words from captions
+        if r.caption:
+            words = re.findall(r"[a-zA-Z]{3,}", r.caption.lower())
+            for w in words:
+                if w not in _STOP_WORDS and len(w) <= 30:
+                    word_counter[w] += 1
+
+        # Hashtags are already theme signals
+        for tag in r.hashtags:
+            cleaned = tag.lower().strip("#")
+            if cleaned and len(cleaned) >= 3:
+                word_counter[cleaned] += 1
+
+    # Filter out words that appear only once (noise)
+    themes = [
+        word for word, count in word_counter.most_common(max_themes * 2)
+        if count >= 2
+    ][:max_themes]
+
+    return themes
+
+
+# ---------------------------------------------------------------------------
+# Competitor benchmarking — compares competitor vs category engagement
+# ---------------------------------------------------------------------------
+
+def _benchmark_competitors(job: Job, records: list[VideoRecord]) -> dict | None:
+    """Partition records into competitor vs. category and compare engagement.
+
+    Returns a benchmark dict with average scores for each group, or None
+    if no competitor accounts are configured.
+    """
+    if not job.competitor_accounts:
+        return None
+
+    competitor_handles = {
+        handle.lower().strip("@") for handle in job.competitor_accounts
+    }
+
+    competitor_records: list[VideoRecord] = []
+    category_records: list[VideoRecord] = []
+
+    for r in records:
+        username = (r.creator_username or "").lower().strip("@")
+        if username in competitor_handles:
+            competitor_records.append(r)
+        else:
+            category_records.append(r)
+
+    def _avg_metrics(recs: list[VideoRecord]) -> dict:
+        if not recs:
+            return {
+                "count": 0,
+                "avg_engagement_score": 0,
+                "avg_views": 0,
+                "avg_likes": 0,
+                "avg_comments": 0,
+                "avg_shares": 0,
+            }
+        n = len(recs)
+        return {
+            "count": n,
+            "avg_engagement_score": round(
+                sum(_engagement_score(r) for r in recs) / n, 1
+            ),
+            "avg_views": round(sum(r.view_count for r in recs) / n, 1),
+            "avg_likes": round(sum(r.like_count for r in recs) / n, 1),
+            "avg_comments": round(sum(r.comment_count for r in recs) / n, 1),
+            "avg_shares": round(sum(r.share_count for r in recs) / n, 1),
+        }
+
+    comp_metrics = _avg_metrics(competitor_records)
+    cat_metrics = _avg_metrics(category_records)
+
+    # Compute relative performance (competitor vs category average)
+    relative_score = None
+    if cat_metrics["avg_engagement_score"] > 0:
+        relative_score = round(
+            comp_metrics["avg_engagement_score"] / cat_metrics["avg_engagement_score"],
+            2,
+        )
+
+    return {
+        "competitor_accounts": list(competitor_handles),
+        "competitor": comp_metrics,
+        "category": cat_metrics,
+        "relative_performance": relative_score,
+    }

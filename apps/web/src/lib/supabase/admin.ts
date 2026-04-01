@@ -1,10 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 
-// Admin client using the service role key — bypasses RLS.
-// NEVER expose this to the browser. Server-side only (pipelines, cron jobs, health checks).
+// Server-side Supabase client. Uses service role key (bypasses RLS) when
+// available; falls back to the anon key so the app works without it.
 export function createAdminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key);
 }

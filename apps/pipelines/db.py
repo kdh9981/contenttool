@@ -44,6 +44,19 @@ async def insert_video_records(
     return count
 
 
+async def insert_trend_analysis(
+    client: Client, row: dict[str, Any]
+) -> str | None:
+    """Insert a trend_analysis row and return the analysis_id."""
+    result = client.table("trend_analysis").insert(row).execute()
+    if result.data:
+        analysis_id = result.data[0].get("analysis_id")
+        logger.info("Inserted trend_analysis %s for job %s / %s",
+                     analysis_id, row.get("job_id"), row.get("platform"))
+        return analysis_id
+    return None
+
+
 async def fetch_queued_jobs(client: Client) -> list[dict[str, Any]]:
     result = (
         client.table("jobs")

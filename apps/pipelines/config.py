@@ -59,10 +59,20 @@ class MetaConfig:
 
 
 @dataclass(frozen=True)
+class AnthropicConfig:
+    api_key: str = field(
+        default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY", "")
+    )
+    model: str = "claude-sonnet-4-6"
+    max_tokens: int = 4096
+
+
+@dataclass(frozen=True)
 class PipelineConfig:
     supabase: SupabaseConfig = field(default_factory=SupabaseConfig)
     youtube: YouTubeConfig = field(default_factory=YouTubeConfig)
     tiktok: TikTokConfig = field(default_factory=TikTokConfig)
     meta: MetaConfig = field(default_factory=MetaConfig)
+    anthropic: AnthropicConfig = field(default_factory=AnthropicConfig)
     max_results_per_platform: int = 50
     retry_attempts: int = 3

@@ -3,7 +3,61 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
-const PLATFORMS = ["tiktok", "instagram", "facebook", "youtube"] as const;
+const PLATFORMS = ["youtube", "tiktok", "instagram", "facebook"] as const;
+const ENABLED_PLATFORMS = new Set(["youtube"]);
+
+const FIELD_TOOLTIPS: Record<string, string> = {
+  company_name: "Your company or brand name",
+  product_name: "The specific product you want to promote",
+  product_category: "Industry or category (e.g., SaaS, Beauty, Fitness)",
+  target_icp:
+    "Ideal Customer Profile — who you want to reach (e.g., Gen Z women 18-25)",
+  target_country:
+    "Target market countries (e.g., US, Korea, Japan). Free-text accepted.",
+  competitor_companies:
+    "Competitor brand names to benchmark against (comma-separated)",
+};
+
+function Tooltip({ text }: { text: string }) {
+  return (
+    <span className="relative group ml-1 inline-flex items-center">
+      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-[10px] font-bold cursor-help leading-none">
+        i
+      </span>
+      <span className="absolute left-6 top-1/2 -translate-y-1/2 z-10 hidden group-hover:block w-56 px-3 py-2 text-xs text-white bg-gray-800 rounded-md shadow-lg">
+        {text}
+      </span>
+    </span>
+  );
+}
+
+function FieldLabel({
+  label,
+  required,
+  tooltipKey,
+}: {
+  label: string;
+  required?: boolean;
+  tooltipKey: string;
+}) {
+  return (
+    <span className="text-sm font-medium text-gray-700 inline-flex items-center">
+      {label}
+      {required && " *"}
+      {FIELD_TOOLTIPS[tooltipKey] && (
+        <Tooltip text={FIELD_TOOLTIPS[tooltipKey]} />
+      )}
+    </span>
+  );
+}
+
+function SectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <legend className="text-xs font-bold text-gray-900 uppercase tracking-widest mb-3 pb-2 border-b border-gray-200 w-full">
+      {children}
+    </legend>
+  );
+}
 
 export default function NewJobPage() {
   const router = useRouter();
@@ -12,7 +66,7 @@ export default function NewJobPage() {
   const [hasSuggested, setHasSuggested] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([
-    ...PLATFORMS,
+    "youtube",
   ]);
   const [highlightedFields, setHighlightedFields] = useState<Set<string>>(
     new Set()
@@ -21,9 +75,24 @@ export default function NewJobPage() {
   const formRef = useRef<HTMLFormElement>(null);
 
   function togglePlatform(p: string) {
+    if (!ENABLED_PLATFORMS.has(p)) return;
     setSelectedPlatforms((prev) =>
       prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
     );
+  }
+
+  function setQuickPeriod(days: number) {
+    if (!formRef.current) return;
+    const endDate = new Date();
+    const startDate = new Date(Date.now() - days * 86400000);
+    const startEl = formRef.current.elements.namedItem(
+      "analysis_period_start"
+    ) as HTMLInputElement;
+    const endEl = formRef.current.elements.namedItem(
+      "analysis_period_end"
+    ) as HTMLInputElement;
+    if (startEl) startEl.value = startDate.toISOString().split("T")[0];
+    if (endEl) endEl.value = endDate.toISOString().split("T")[0];
   }
 
   async function handleSuggest() {
@@ -77,11 +146,11 @@ export default function NewJobPage() {
       }
       if (suggestions.competitorCompanies) {
         const el = f.elements.namedItem(
-          "competitor_accounts"
+          "competitor_companies"
         ) as HTMLInputElement;
         if (el) {
           el.value = suggestions.competitorCompanies;
-          filled.push("competitor_accounts");
+          filled.push("competitor_companies");
         }
       }
       if (suggestions.analysisPeriodDays) {
@@ -109,7 +178,6 @@ export default function NewJobPage() {
       setHighlightedFields(new Set(filled));
       setHasSuggested(true);
 
-      // Remove highlight after animation
       setTimeout(() => setHighlightedFields(new Set()), 2000);
     } catch {
       setError("Failed to connect to suggestion service");
@@ -125,7 +193,7 @@ export default function NewJobPage() {
 
     const form = new FormData(e.currentTarget);
 
-    const competitors = (form.get("competitor_accounts") as string)
+    const competitors = (form.get("competitor_companies") as string)
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
@@ -159,7 +227,6 @@ export default function NewJobPage() {
     router.push(`/jobs/${job.job_id}`);
   }
 
-  // Default date range: last 7 days
   const today = new Date().toISOString().split("T")[0];
   const weekAgo = new Date(Date.now() - 7 * 86400000)
     .toISOString()
@@ -174,7 +241,7 @@ export default function NewJobPage() {
 
   return (
     <div className="p-8 max-w-2xl">
-      <h1 className="text-2xl font-bold mb-6">Create Analysis Job</h1>
+      <h1 className="text-2xl font-bold mb-8">Create Analysis Job</h1>
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
@@ -182,17 +249,17 @@ export default function NewJobPage() {
         </div>
       )}
 
-      <form ref={formRef} onSubmit={handleSubmit} className="space-y-5">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-8">
         {/* Company & Product */}
         <fieldset className="space-y-4">
-          <legend className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">
-            Company & Product
-          </legend>
+          <SectionHeader>Company &amp; Product</SectionHeader>
           <div className="grid grid-cols-2 gap-4">
             <label className="block">
-              <span className="text-sm font-medium text-gray-700">
-                Company Name *
-              </span>
+              <FieldLabel
+                label="Company Name"
+                required
+                tooltipKey="company_name"
+              />
               <input
                 name="company_name"
                 required
@@ -201,9 +268,11 @@ export default function NewJobPage() {
               />
             </label>
             <label className="block">
-              <span className="text-sm font-medium text-gray-700">
-                Product Name *
-              </span>
+              <FieldLabel
+                label="Product Name"
+                required
+                tooltipKey="product_name"
+              />
               <input
                 name="product_name"
                 required
@@ -213,9 +282,11 @@ export default function NewJobPage() {
             </label>
           </div>
           <label className="block">
-            <span className="text-sm font-medium text-gray-700">
-              Product Category *
-            </span>
+            <FieldLabel
+              label="Product Category"
+              required
+              tooltipKey="product_category"
+            />
             <input
               name="product_category"
               required
@@ -255,21 +326,25 @@ export default function NewJobPage() {
                 Suggesting...
               </>
             ) : (
-              <>{hasSuggested ? "\u2728 Re-suggest Targeting" : "\u2728 Suggest Targeting"}</>
+              <>
+                {hasSuggested
+                  ? "\u2728 Re-suggest Targeting"
+                  : "\u2728 Suggest Targeting"}
+              </>
             )}
           </button>
         </fieldset>
 
         {/* Targeting */}
         <fieldset className="space-y-4">
-          <legend className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">
-            Targeting
-          </legend>
+          <SectionHeader>Targeting</SectionHeader>
           <div className="grid grid-cols-2 gap-4">
             <label className="block">
-              <span className="text-sm font-medium text-gray-700">
-                Target ICP *
-              </span>
+              <FieldLabel
+                label="Target ICP"
+                required
+                tooltipKey="target_icp"
+              />
               <input
                 name="target_icp"
                 required
@@ -278,9 +353,11 @@ export default function NewJobPage() {
               />
             </label>
             <label className="block">
-              <span className="text-sm font-medium text-gray-700">
-                Target Country *
-              </span>
+              <FieldLabel
+                label="Target Country"
+                required
+                tooltipKey="target_country"
+              />
               <input
                 name="target_country"
                 required
@@ -290,13 +367,14 @@ export default function NewJobPage() {
             </label>
           </div>
           <label className="block">
-            <span className="text-sm font-medium text-gray-700">
-              Competitor Accounts
-            </span>
+            <FieldLabel
+              label="Competitor Companies"
+              tooltipKey="competitor_companies"
+            />
             <input
-              name="competitor_accounts"
-              className={inputClass("competitor_accounts")}
-              placeholder="@competitor1, @competitor2 (comma-separated)"
+              name="competitor_companies"
+              className={inputClass("competitor_companies")}
+              placeholder="Nike, Adidas, Puma (comma-separated)"
               defaultValue=""
             />
           </label>
@@ -304,9 +382,23 @@ export default function NewJobPage() {
 
         {/* Analysis Period */}
         <fieldset className="space-y-4">
-          <legend className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">
-            Analysis Period
-          </legend>
+          <SectionHeader>Analysis Period</SectionHeader>
+          <div className="flex gap-2 mb-2">
+            {[
+              { label: "Last 7 days", days: 7 },
+              { label: "Last 30 days", days: 30 },
+              { label: "Last 90 days", days: 90 },
+            ].map(({ label, days }) => (
+              <button
+                key={days}
+                type="button"
+                onClick={() => setQuickPeriod(days)}
+                className="px-3 py-1.5 rounded-md text-xs font-medium border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition-colors"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <label className="block">
               <span className="text-sm font-medium text-gray-700">
@@ -337,24 +429,35 @@ export default function NewJobPage() {
 
         {/* Platforms */}
         <fieldset>
-          <legend className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-            Platforms
-          </legend>
+          <SectionHeader>Platforms</SectionHeader>
           <div className="flex gap-3">
-            {PLATFORMS.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => togglePlatform(p)}
-                className={`px-4 py-2 rounded-md text-sm font-medium border transition-colors capitalize ${
-                  selectedPlatforms.includes(p)
-                    ? "bg-gray-900 text-white border-gray-900"
-                    : "bg-white text-gray-500 border-gray-300 hover:border-gray-400"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
+            {PLATFORMS.map((p) => {
+              const enabled = ENABLED_PLATFORMS.has(p);
+              const selected = selectedPlatforms.includes(p);
+              return (
+                <div key={p} className="relative group">
+                  <button
+                    type="button"
+                    onClick={() => togglePlatform(p)}
+                    disabled={!enabled}
+                    className={`px-4 py-2 rounded-md text-sm font-medium border transition-colors capitalize ${
+                      !enabled
+                        ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                        : selected
+                          ? "bg-gray-900 text-white border-gray-900"
+                          : "bg-white text-gray-500 border-gray-300 hover:border-gray-400"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                  {!enabled && (
+                    <span className="absolute -top-8 left-1/2 -translate-x-1/2 z-10 hidden group-hover:block whitespace-nowrap px-2 py-1 text-xs text-white bg-gray-800 rounded shadow-lg">
+                      Coming soon
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
           {selectedPlatforms.length === 0 && (
             <p className="mt-2 text-sm text-red-600">

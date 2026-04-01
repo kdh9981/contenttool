@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+apps/web/.next/
+apps/web/out/
+
+# Env files — never commit secrets
+.env
+.env.local
+.env.*.local
+apps/web/.env
+apps/web/.env.local
+
+# Supabase local
+supabase/.branches/
+supabase/.temp/
+
+# Vercel
+.vercel
+
+# OS
+.DS_Store
+*.pem
+
+# Build
+dist/
+build/

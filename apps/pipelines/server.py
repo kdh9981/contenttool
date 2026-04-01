@@ -19,9 +19,10 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from .config import PipelineConfig
-from .db import get_client
+from .db import get_client, insert_content_package
 from .models import Job
 from .orchestrator import run_job
+from .content_generator import generate_content_package
 
 logging.basicConfig(
     level=logging.INFO,
@@ -96,6 +97,83 @@ async def run_jobs(
             results.append({"job_id": job_id, "status": "error", "error": str(e)})
 
     return RunJobsResponse(triggered=len(body.job_ids), results=results)
+
+
+class GenerateRequest(BaseModel):
+    job_id: str
+    platform: str | None = None
+
+
+@app.post("/generate")
+async def generate_content(
+    body: GenerateRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Generate content packages from existing trend analysis data."""
+    _check_auth(authorization)
+    assert config is not None
+
+    db = get_client(config.supabase)
+
+    # Fetch job
+    job_result = db.table("jobs").select("*").eq("job_id", body.job_id).single().execute()
+    if not job_result.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = Job(**job_result.data)
+
+    # Fetch trend analyses
+    query = db.table("trend_analysis").select("*").eq("job_id", body.job_id)
+    if body.platform:
+        query = query.eq("platform", body.platform)
+    analyses_result = query.execute()
+
+    if not analyses_result.data:
+        raise HTTPException(status_code=404, detail="No trend analysis found")
+
+    packages_created: list[dict] = []
+    for analysis in analyses_result.data:
+        platform = analysis["platform"]
+        brief_text = analysis.get("content_brief")
+        analysis_id = analysis.get("analysis_id")
+
+        if not brief_text:
+            packages_created.append({
+                "platform": platform,
+                "status": "skipped",
+                "reason": "no content brief",
+            })
+            continue
+
+        try:
+            content_body = await generate_content_package(
+                config, job, platform, brief_text, analysis_id
+            )
+            package_row = {
+                "job_id": job.job_id,
+                "title": f"{job.product_name} — {platform.title()} Content Package",
+                "status": "draft",
+                "content_type": "bundle",
+                "content_body": content_body,
+                "platform": platform,
+                "target_audience": job.target_icp,
+                "created_by": "pipeline-worker",
+            }
+            pkg_id = await insert_content_package(db, package_row)
+            packages_created.append({
+                "platform": platform,
+                "status": "created",
+                "package_id": pkg_id,
+            })
+        except Exception as e:
+            logger.exception("Content generation failed for %s", platform)
+            packages_created.append({
+                "platform": platform,
+                "status": "error",
+                "error": str(e),
+            })
+
+    return {"job_id": body.job_id, "packages": packages_created}
 
 
 @app.get("/health")

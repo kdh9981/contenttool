@@ -65,6 +65,20 @@ async def insert_trend_analysis(
     return None
 
 
+async def insert_content_package(
+    client: Client, package: dict[str, Any]
+) -> str | None:
+    """Insert a content_packages row and return the package id."""
+    result = await asyncio.to_thread(
+        lambda: client.table("content_packages").insert(package).execute()
+    )
+    if result.data:
+        pkg_id = result.data[0].get("id")
+        logger.info("Created content package %s for job %s", pkg_id, package.get("job_id"))
+        return pkg_id
+    return None
+
+
 async def fetch_queued_jobs(client: Client) -> list[dict[str, Any]]:
     result = await asyncio.to_thread(
         lambda: (

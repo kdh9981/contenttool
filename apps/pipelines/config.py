@@ -78,5 +78,8 @@ class PipelineConfig:
     tiktok: TikTokConfig = field(default_factory=TikTokConfig)
     meta: MetaConfig = field(default_factory=MetaConfig)
     anthropic: AnthropicConfig = field(default_factory=AnthropicConfig)
+    openai_api_key: str = field(
+        default_factory=lambda: os.environ.get("OPENAI_API_KEY", "")
+    )
     max_results_per_platform: int = 50
     retry_attempts: int = 3

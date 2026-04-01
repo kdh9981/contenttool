@@ -10,9 +10,10 @@ import re
 from collections import Counter
 
 from .config import PipelineConfig
-from .db import get_client, update_job_status, insert_video_records, insert_trend_analysis
+from .db import get_client, update_job_status, insert_video_records, insert_trend_analysis, insert_content_package
 from .models import Job, PipelineResult, VideoRecord
 from .brief_generator import generate_brief, _engagement_score
+from .content_generator import generate_content_package
 from . import youtube, tiktok, meta
 
 logger = logging.getLogger(__name__)
@@ -177,7 +178,27 @@ async def _generate_briefs(
             "content_brief": brief_text,
             "competitor_benchmark": competitor_benchmark,
         }
-        await insert_trend_analysis(db, row)
+        analysis_id = await insert_trend_analysis(db, row)
+
+        # Generate content assets and create a content package (best-effort)
+        if brief_text:
+            try:
+                content_body = await generate_content_package(
+                    config, job, platform, brief_text, analysis_id
+                )
+                package_row = {
+                    "job_id": job.job_id,
+                    "title": f"{job.product_name} — {platform.title()} Content Package",
+                    "status": "draft",
+                    "content_type": "bundle",
+                    "content_body": content_body,
+                    "platform": platform,
+                    "target_audience": job.target_icp,
+                    "created_by": "pipeline-worker",
+                }
+                await insert_content_package(db, package_row)
+            except Exception as e:
+                logger.error("Content package generation failed for %s: %s", platform, e)
 
 
 # ---------------------------------------------------------------------------

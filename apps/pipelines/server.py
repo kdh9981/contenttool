@@ -4,8 +4,8 @@ Deploy this alongside (or separately from) the Next.js app so the
 Vercel cron endpoint can trigger Python pipeline execution via POST.
 
 Usage:
-    uvicorn apps.pipelines.server:app --host 0.0.0.0 --port 8000
-    # or: python -m pipelines.server
+    uvicorn pipelines.server:app --host 0.0.0.0 --port 8000
+    # or from monorepo root: uvicorn apps.pipelines.server:app ...
 """
 
 from __future__ import annotations
